@@ -14,6 +14,7 @@ Open a Worksheet, copy/paste the following code and execute all. This will set u
 
 ``` sql
 CREATE or replace DATABASE CC_SNOWFLAKE_INTELLIGENCE_E2E;
+USE DATABASE CC_SNOWFLAKE_INTELLIGENCE_E2E;
 
 CREATE OR REPLACE API INTEGRATION git_api_integration
   API_PROVIDER = git_https_api
