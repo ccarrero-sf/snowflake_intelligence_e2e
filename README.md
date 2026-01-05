@@ -45,57 +45,6 @@ Now you should have all files we are going to need for this lab in your Snowflak
 
 -----------
 
-Open a Worksheet, copy/paste the following code and execute all. This will set up the GIT repository and will copy everything you will be using during the lab.
-
-``` sql
-CREATE or replace DATABASE CC_SNOWFLAKE_INTELLIGENCE_E2E;
-USE DATABASE CC_SNOWFLAKE_INTELLIGENCE_E2E;
-
-CREATE OR REPLACE API INTEGRATION git_api_integration
-  API_PROVIDER = git_https_api
-  API_ALLOWED_PREFIXES = ('https://github.com/ccarrero-sf/')
-  ENABLED = TRUE;
-
-CREATE OR REPLACE GIT REPOSITORY git_repo
-    api_integration = git_api_integration
-    origin = 'https://github.com/ccarrero-sf/snowflake_intelligence_e2e';
-
--- Make sure we get the latest files
-ALTER GIT REPOSITORY git_repo FETCH;
-
--- Setup stage for  Docs
-create or replace stage docs ENCRYPTION = (TYPE = 'SNOWFLAKE_SSE') DIRECTORY = ( ENABLE = true );
-
--- Copy the docs for bikes
-COPY FILES
-    INTO @docs/
-    FROM @CC_SNOWFLAKE_INTELLIGENCE_E2E.PUBLIC.git_repo/branches/main/docs/;
-
-ALTER STAGE docs REFRESH;
-
-create or replace stage csv ENCRYPTION = (TYPE = 'SNOWFLAKE_SSE') DIRECTORY = ( ENABLE = true );
-
--- Copy the docs for bikes
-COPY FILES
-    INTO @csv/
-    FROM @CC_SNOWFLAKE_INTELLIGENCE_E2E.PUBLIC.git_repo/branches/main/csv/;
-
-ALTER STAGE csv REFRESH;
-
-CREATE OR REPLACE NOTEBOOK SETUP_BIKES_SNOWFLAKE_INTELLIGENCE
-    FROM '@CC_SNOWFLAKE_INTELLIGENCE_E2E.PUBLIC.git_repo/branches/main/' 
-
-        MAIN_FILE = 'SETUP_TOOLS_SI.ipynb' 
-        COMPUTE_POOL = SYSTEM_COMPUTE_POOL_CPU --replace with CPU pool (if needed)
-        RUNTIME_NAME = 'SYSTEM$BASIC_RUNTIME'
-        ;
-        
-ALTER NOTEBOOK SETUP_BIKES_SNOWFLAKE_INTELLIGENCE ADD LIVE VERSION FROM LAST;
-
-
-
-```
-
 ## Step 2: Setup Unstructured Data Tools to be Used by the Agent
 
 We are going to be using a Snowflake Notebook to set up the Tools that will be used by the Snowflake Cortex Agents. Open the Notebook and follow each of the cells.
