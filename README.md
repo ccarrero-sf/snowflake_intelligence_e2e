@@ -1,12 +1,14 @@
-# Building Cortex Agents Hands-On Lab
+# Building Cortex Agents & Snowflake Intelligent with Evaluations Hands-On Lab
 
-This lab will explain step by step how to build a Data Agent using Snowflake Cortex Agents. You will be able to build a Data Agent that is able to use both Structured and Unstructured data to answer sales assistant questions.
+This lab will explain step by step how to build a Data Agent using Snowflake Cortex Agents, how to use them within Snowflake Intelligence and how to evaluate their performance. You will be able to build a Data Agent that is able to use both Structured and Unstructured data to answer sales assistant questions.
 
 First step will be to build the Tools that will be provided to the Data Agent in order to do the work. Snowflake provides two very powerful tools in order to use Structured and Unstructured data: Cortex Analyst and Cortex Search.
 
 A custom and unique dataset about bikes and skis will be used by this setup, but you should be able to use your own data. This artificial dataset's goal is to make sure that we are using data not available on the Internet, so no LLM will be able to know about our own data.
 
 The first step will be to create your own Snowflake Trial Account (or use the one provided for you during this hands-on lab). Once you have created it, you will be using Snowflake GIT integration to get access to all the data that will be needed during this lab.
+
+This lab leverages Snowflake Notebooks within Workspaces and their GIT integration. 
 
 ## Step 1: Setup GIT Integration 
 
