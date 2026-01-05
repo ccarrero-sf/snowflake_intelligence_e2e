@@ -1,6 +1,6 @@
-# Building Cortex Agents & Snowflake Intelligent with Evaluations Hands-On Lab
+# Building Cortex Agents & Snowflake Intelligence End-to-End Hands-On Lab
 
-This lab will explain step by step how to build a Data Agent using Snowflake Cortex Agents, how to use them within Snowflake Intelligence and how to evaluate their performance. You will be able to build a Data Agent that is able to use both Structured and Unstructured data to answer sales assistant questions.
+This lab will explain step by step how to build a Data Agent using Snowflake Cortex Agents, how to use them within Snowflake Intelligence and how to evaluate their performance using AI Observabiity in Snowflake Cortex. You will be able to build a Data Agent that is able to use both Structured and Unstructured data to answer sales assistant questions.
 
 First step will be to build the Tools that will be provided to the Data Agent in order to do the work. Snowflake provides two very powerful tools in order to use Structured and Unstructured data: Cortex Analyst and Cortex Search.
 
@@ -10,7 +10,40 @@ The first step will be to create your own Snowflake Trial Account (or use the on
 
 This lab leverages Snowflake Notebooks within Workspaces and their GIT integration. 
 
-## Step 1: Setup GIT Integration 
+## Step 1: Create a new Workspace from the GIT repository 
+
+Select Projects -> Workspaces. Click on My Workspace and within Create click on "From Git repository"
+
+![image](img/0_workspace_git.png)
+
+If you do not have a API integration already created, when creating the workspace from Git repository you have the opportunity to create it. In the repository URL add:
+
+``` sql
+https://github.com/ccarrero-sf/snowflake_intelligence_e2e
+```
+If you need to create an API Integration, click on "Create API integration", this will bring you to one SQL where you can run:
+
+``` sql
+CREATE OR REPLACE API INTEGRATION git_api_integration
+  API_PROVIDER = git_https_api
+  API_ALLOWED_PREFIXES = ('https://github.com/ccarrero-sf/')
+  enabled = true
+  allowed_authentication_secrets = all;
+``` 
+Click on the Run buttom. 
+
+![image](img/1_git_api.png)
+
+When creating a workspace from a Git repository you have the opportunity to add your Personal access token. Because this is a public lab, just select on Public repository and click on Create.
+
+![image](img/2_create.png)
+
+Now you should have all files we are going to need for this lab in your Snowflake account:
+
+![image](img/3_repo.png)
+
+
+-----------
 
 Open a Worksheet, copy/paste the following code and execute all. This will set up the GIT repository and will copy everything you will be using during the lab.
 
