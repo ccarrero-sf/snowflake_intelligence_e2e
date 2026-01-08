@@ -711,8 +711,39 @@ create or replace semantic view SALES_DATA_SEMANTIC_VIEW
 	with extension (CA='{"tables":[{"name":"DIM_ARTICLE","dimensions":[{"name":"ARTICLE_BRAND","sample_values":["Mondracer","Veloci","TDBootz"]},{"name":"ARTICLE_CATEGORY","sample_values":["Bike","Ski Boots","Skis"]},{"name":"ARTICLE_COLOR","sample_values":["Red","Blue","Black"]},{"name":"ARTICLE_NAME"}],"facts":[{"name":"ARTICLE_ID","sample_values":["1","2","3"]},{"name":"ARTICLE_PRICE","sample_values":["3000","9000","10000"]}]},{"name":"DIM_CUSTOMER","dimensions":[{"name":"CUSTOMER_GENDER","sample_values":["Male","Female"]},{"name":"CUSTOMER_NAME","sample_values":["Customer 0","Customer 1","Customer 2"]},{"name":"CUSTOMER_REGION","sample_values":["North","South","East"]},{"name":"CUSTOMER_SEGMENT","sample_values":["Premium","Regular","Occasional"]}],"facts":[{"name":"CUSTOMER_AGE","sample_values":["38","23","24"]},{"name":"CUSTOMER_ID","sample_values":["0","1","2"]}]},{"name":"FACT_SALES","dimensions":[{"name":"PROMOTION_APPLIED","sample_values":["TRUE","FALSE"]},{"name":"SALES_CHANNEL","sample_values":["Online","In-Store","Partner"]}],"facts":[{"name":"ARTICLE_ID","sample_values":["5","4","7"]},{"name":"CUSTOMER_ID","sample_values":["3678","3031","1927"]},{"name":"QUANTITY_SOLD","sample_values":["9","2","10"]},{"name":"SALE_ID","sample_values":["0","1","2"]},{"name":"TOTAL_PRICE","sample_values":["76500","100000","10000"]}],"time_dimensions":[{"name":"DATE_SALES","sample_values":["2022-04-16","2022-04-17","2022-04-18"]}]}],"relationships":[{"name":"customer_join","relationship_type":"many_to_one","join_type":"inner"},{"name":"article_join","relationship_type":"many_to_one","join_type":"inner"}]}');
 ```
 
+### Role Based Access Control
 
-You can switch the ROLE and test how RBAC works:
+We have defined previously 3 different roles. Now we are goign to assign the specific objects needed by each role:
+
+```SQL
+-- BIKE_ROLE:
+
+GRANT USAGE ON DATABASE CC_SNOWFLAKE_INTELLIGENCE_E2E TO ROLE BIKE_ROLE;
+GRANT USAGE ON SCHEMA PUBLIC TO ROLE BIKE_ROLE;
+GRANT SELECT ON TABLE DIM_ARTICLE TO ROLE BIKE_ROLE;
+GRANT SELECT ON TABLE DIM_CUSTOMER TO ROLE BIKE_ROLE;
+GRANT SELECT ON TABLE FACT_SALES TO ROLE BIKE_ROLE;
+
+--- SNOW_ROLE:
+
+GRANT USAGE ON DATABASE CC_SNOWFLAKE_INTELLIGENCE_E2E TO ROLE SNOW_ROLE;
+GRANT USAGE ON SCHEMA PUBLIC TO ROLE SNOW_ROLE;
+GRANT SELECT ON TABLE DIM_ARTICLE TO ROLE SNOW_ROLE;
+GRANT SELECT ON TABLE DIM_CUSTOMER TO ROLE SNOW_ROLE;
+GRANT SELECT ON TABLE FACT_SALES TO ROLE SNOW_ROLE;
+
+-- BIKE_SNOW_ROLE:
+
+GRANT USAGE ON DATABASE CC_SNOWFLAKE_INTELLIGENCE_E2E TO ROLE BIKE_SNOW_ROLE;
+GRANT USAGE ON SCHEMA PUBLIC TO ROLE BIKE_SNOW_ROLE;
+GRANT SELECT ON TABLE DIM_ARTICLE TO ROLE BIKE_SNOW_ROLE;
+GRANT SELECT ON TABLE DIM_CUSTOMER TO ROLE BIKE_SNOW_ROLE;
+GRANT SELECT ON TABLE FACT_SALES TO ROLE BIKE_SNOW_ROLE;
+```
+
+Test how RBAC works. Different roles will be able to see different analytical data.
+
+When using the SNOW_ROLE, the query should only retrieve Snow related products:
 
 ```SQL
 USE ROLE SNOW_ROLE;
@@ -739,47 +770,16 @@ ORDER BY
   ys.total_sales DESC NULLS LAST
 ```
 
-Switch back to the ACCOUNTADMIN ROLE you are using:
+Switch back to the  ROLE you are using in this session:
 
-```SQL
-use role ACCOUNTADMIN;
+```python
+session.use_role(this_session_role)
 ```
 
+So far, we have created the tables with sales data and the Semantic View that will be used by Cortex Analyst. You can click on AI & ML -> Analyst, select your database and schema and review your Semantic View:
 
-In the next section, you are going to explore the Semantic File. We have prepared two files that you can copy from the GIT repository:
+![image](img/9_semantic_view.png)
 
-```SQL
-create or replace stage semantic_files ENCRYPTION = (TYPE = 'SNOWFLAKE_SSE') DIRECTORY = ( ENABLE = true );
-
-COPY FILES
-    INTO @semantic_files/
-    FROM @CC_CORTEX_AGENTS_RBAC.PUBLIC.git_repo/branches/main/
-    FILES = ('semantic.yaml', 'semantic_search.yaml');
-```
-
-Grant access to the semantic file to the ROLES:
-
-```SQL
-GRANT READ, WRITE ON STAGE CC_CORTEX_AGENTS_RBAC.PUBLIC.SEMANTIC_FILES TO ROLE BIKE_ROLE;
-GRANT READ, WRITE ON STAGE CC_CORTEX_AGENTS_RBAC.PUBLIC.SEMANTIC_FILES TO ROLE SNOW_ROLE;
-GRANT READ ON STAGE CC_CORTEX_AGENTS_RBAC.PUBLIC.SEMANTIC_FILES TO ROLE BIKE_SNOW_ROLE;
-```
-
-## Step 4: Explore/Create the Semantic Model to be used by Cortex Analyst Tool
-
-The [semantic model](https://docs.snowflake.com/en/user-guide/snowflake-cortex/cortex-analyst/semantic-model-spec) maps business terminology to the database schema and adds contextual meaning. It allows [Cortex Analyst](https://docs.snowflake.com/en/user-guide/snowflake-cortex/cortex-analyst) to generate the correct SQL for a question asked in natural language.
-
-We have already provided a couple of semantic models for you to explore. 
-
-### Open the existing semantic model
-
-Under AI & ML -> Studio, select "Cortex Analyst"
-
-![image](img/3_cortex_analyst.png)
-
-Select the existing semantic.yaml file
-
-![image](img/4_select_semantic_file.png)
 
 ### Test the Semantic Model
 
@@ -788,57 +788,15 @@ You can try some analytical questions to test your semantic file:
 - What is the average revenue per transaction per sales channel?
 - What products are often bought by the same customers?
 
-### Cortex Analyst and Cortex Search Integration
+Select your Semantic View, click on Playground and test your questions:
 
-We are going to explore the integration between Cortex Analyst and Cortex Search to provide better results. If we take a look at the semantic model, click on DIM_ARTICLE -> Dimensions and edit ARTICLE_NAME:
+![image](img/10_analyst_playground.png)
 
-In the Dimension you will see that some Sample values have been provided:
+We have created a Cortex Search and Cortex Analyst integration to help identify the Article Names before. You can check this under DIM_ARTICLE -> Dimensions -> ARTICLE_NAME. If you click on Edit dimension, you see it is pointing to the Cortex Search Service. This allows that a question like "What is the total sales for the carvers?" is able to identify that the article name is "Carver Skies" as you can see in the generated query. This is very useful for columns with high cardinality:
 
-![image](img/5_sample_values.png)
+![image](img/11_search_analyst_integration.png)
 
-Let's see what happens if we ask the following question:
 
-- What are the total sales for the carvers?
-
-You may have an answer like this:
-
-![image](img/6_response.png)
-
-Let's see what happens when we integrate the ARTICLE_NAME dimension with the Cortex Search Service we created in the Notebook (_ARTICLE_NAME_SEARCH). If you haven't run it already in the Notebook, this is the code to be executed:
-
-```SQL
-CREATE OR REPLACE TABLE ARTICLE_NAMES AS
-  SELECT
-      DISTINCT ARTICLE_NAME AS ARTICLE_NAME
-  FROM DIM_ARTICLE;
-
-CREATE OR REPLACE CORTEX SEARCH SERVICE _ARTICLE_NAME_SEARCH
-  ON ARTICLE_NAME
-  WAREHOUSE = COMPUTE_WH
-  TARGET_LAG = '1 day'
-  EMBEDDING_MODEL = 'snowflake-arctic-embed-l-v2.0'
-AS (
-  SELECT
-       ARTICLE_NAME
-  FROM ARTICLE_NAMES
-);
-```
-In the UI:
-
-- Remove the sample values provided
-- Click on + Search Service and add _ARTICLE_NAME_SEARCH
-
-It will look like this:
-
-![image](img/7_cortex_search_integration.png)
-
-Click on save, also save your semantic file (top right) and ask the same question again:
-
-- What are the total sales for the carvers?
-
-Notice that now Cortex Analyst is able to provide the right answer because of the Cortex Search integration, we asked for "Carvers" but found that the correct article to ask about is "Carver Skis":
-
-![image](img/8_right_answer.png)
 
 Now that we have the tools ready, we can create our first App that leverages Cortex Agents API.
 
