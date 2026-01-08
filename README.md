@@ -797,135 +797,121 @@ We have created a Cortex Search and Cortex Analyst integration to help identify 
 ![image](img/11_search_analyst_integration.png)
 
 
-
-Now that we have the tools ready, we can create our first App that leverages Cortex Agents API.
-
-## Step 5: Setup Snowflake Intelligence Agents
+## Step 5: Setup Snowflake Agents
 
 Now we have the tools that will be providing context to the Agents we are going to build. First let's create one Agent that will be able to answer questions about all our products, from sales to product specifications.
 
-In Snowsight, on the left hand navigation menu, select AI & ML and Agents:
+We can use Snowsight or create it programatically with this SQL:
 
-![image](img/9_agents.png)
+```SQL
+CREATE OR REPLACE AGENT BIKES_SNOW_AGENT
+COMMENT = "Bikes & Snow Products and Sales Agent"
+FROM SPECIFICATION
+$$
+{"models":{"orchestration":"auto"},
 
-Click on Create agent.
+"orchestration":{},"instructions":{"response":"Be always polite and answer asking if they need further help","orchestration":"Your Role: You are \"SalesExpertBot\", a sales intelligence assistant for the retailer agents. Your Scope: You answer questions about product specifications and sales for those products. Your role is also help sales to understand how product sales are evolving and how differences in those products can affect their sales numbers.\n\nWhen answering product specifications always check you are answering the question for the product the question is asked for. You should look to the document title to identify documents properly.\n","sample_questions":[{"question":"What is the guarantee of the Premium bike?"},{"question":"What is the bike with most sales revenue during last year and what is their guarantee?"},{"question":"What is the monthly performance sales for the xtreme road bike"},{"question":"When the xtreme road bike sales started declining and what could be the reason for that?"}]},
 
-The first agent will be able to see all data, name it:
+"tools":[{"tool_spec":{"type":"cortex_analyst_text_to_sql","name":"SALES_DATA_SEMANTIC_VIEW","description":"REASONING:\nThis semantic view represents a classic star schema retail analytics model focused on sales performance analysis. The three tables form a cohesive data model where FACT_SALES serves as the central transaction table connected to two dimension tables through foreign key relationships. DIM_ARTICLE provides product context while DIM_CUSTOMER provides buyer context, enabling comprehensive analysis of who bought what, when, where, and how much. The relationships allow for multi-dimensional analysis across product categories, customer segments, sales channels, and time periods.\n\nDESCRIPTION:\nThe SALES_DATA_SEMANTIC_VIEW provides a comprehensive retail sales analytics framework built on three interconnected tables in the CC_SNOWFLAKE_INTELLIGENCE_E2E.PUBLIC schema. The central FACT_SALES table captures all sales transactions with details like quantities, prices, channels, and promotions, while connecting to DIM_ARTICLE (product catalog with brands, categories, colors, and prices) and DIM_CUSTOMER (customer profiles with demographics, regions, and segments) through many-to-one relationships. This star schema design enables rich multi-dimensional analysis of sales performance across product attributes, customer characteristics, sales channels, and time periods. The model supports comprehensive business intelligence queries for revenue analysis, customer segmentation, product performance, and promotional effectiveness across the company's retail operations."}},
 
-![image](img/10_create_agent.png)
+{"tool_spec":{"type":"cortex_search","name":"DOCUMENTATION_TOOL","description":"Tool to access product specifications. "}},{"tool_spec":{"type":"cortex_search","name":"CUSTOMER_EXPERIENCE","description":"This tool provides access to the comments and feedback customers provide about products"}}],"tool_resources":{"CUSTOMER_EXPERIENCE":{"id_column":"PRODUCT_NAME","max_results":10,"search_service":"CC_SNOWFLAKE_INTELLIGENCE_E2E.PUBLIC.CUSTOMER_EXPERIENCE_TOOL","title_column":"PRODUCT_NAME"},"DOCUMENTATION_TOOL":{"id_column":"SCOPED_FILE_URL","max_results":6,"search_service":"CC_SNOWFLAKE_INTELLIGENCE_E2E.PUBLIC.DOCUMENTATION_TOOL","title_column":"RELATIVE_PATH"},"SALES_DATA_SEMANTIC_VIEW":{"execution_environment":{"type":"warehouse","warehouse":""},"semantic_view":"CC_SNOWFLAKE_INTELLIGENCE_E2E.PUBLIC.SALES_DATA_SEMANTIC_VIEW"}}}
+$$;
+```
 
-Click on the ALL_DATA_AGENT just created. 
+Once the Agent has been created, it can be used via REST API, we can add it to a Snowflake Native MCP Server or we can add it to Snowflake Intelligence. To make it available for Snowflake Intelligence, you can add it via the UI or programatically with:
 
-We have now an empty agent where we are going to start adding instructions, tools to be used (all what we have already created), planning instructions and roles to be used:
+```SQL
+ALTER SNOWFLAKE INTELLIGENCE SNOWFLAKE_INTELLIGENCE_OBJECT_DEFAULT ADD AGENT BIKES_SNOW_AGENT;
+```
 
-![image](img/11_all_data_agent.png)
+We can review this Agent configuratin using the UI (you can also set it up using the UI). Click on AI & ML -> Agents and you will be able to see the Agents you have created:
 
-Click on Edit.
+![image](img/12_agents.png)
 
-- About: 
+Click on the BIKES_SNOW_AGENT to review it. Click on Edit and review ach of the tabs. To know more about each section and best practices, you can read [Best Practices for Building Cortex Agents](https://www.snowflake.com/en/developers/guides/best-practices-to-building-cortex-agents/).
 
-Here we have the name of the Agent the user is going to see and the description we want to provide.
+#### About
 
-- Instructions: 
+Here you add the name that is going to be displayed and the description of the agent. You can also add some example questions so the user know what kind of questions can be asked.
 
-Here you instruct the agent how to respond. Think about how you should teach an agent to do their work and what you expect. For example, we have information about guarantee of our products, but as it is in different formats, we are going to ask the Agent to always provide that information in days:
+![image](img/13_about.png)
 
-"When being asked about guarantee information always provide it in days"
+#### Tools
 
-You can also provide some sample questions to help your users to use the Agent.
+Here we have added the tools we have created before in this notebook. We can see SALES_DATA_SEMANTIC_VIEW, that leverages Cortex Analyst in order to extract information from Sales tables, the DOCUMENTATION_TOOL that have access to the PDFs with documentations and Pictures descriptions, and the CUSTOMER_EXPERIENCE tool, with access to the customer coments. 
 
-Some examples:
+We could also add here our own custom tools
 
-"What is the guarantee of the Premium bike?"
+![image](img/14_tools.png)
 
-"What is the bike with most sales revenue during last year and what is their guarantee?"
+#### Orchestration
 
-"What is the bike with highest sales and what is the one with lowest sales and what are their differences in their specifications?"
+Here you tell the agent how to reason through the different tasks and how to choose the right tools. Also you provide instructions about how the agent shoudl respond:
 
-- Tools: 
+![image](img/14_tools.png)
 
-Here we are going to add the Cortex Analyst and Cortex Search Services we have already created. These are the powerful tools the Agent will be using to get context for the questions received.
+#### Access
 
-Cortex Analyst: Select the semantic_search_yaml file, the warehouse that will be used to run the queries and provide a description of the tool. You can also generate the description with Cortex:
+Here we determine what roles can use this agent. This is important, because we have set Role Based Access Control and Row Access Policies. When using Cortex Analyst tool, the agent will respect those policies and will only retrieve the information the role has access to.
 
-![image](img/12_cortex_analyst_tool.png)
+![image](img/16_access.png)
 
-Cortex Search Service: Add a name, description and select the DOCUMENTATION_TOOL Service we had created before
+If you continue executing the Notebook cells, next will be creating specific Agents for Bike and Snow that will only have access to their specific Cortex Search Services as tools. We do not copy it here as the only difference is the tool to be used and you have it in the Notebook.
 
-![image](img/13_cortex_search_tool.png)
 
-- Orchestation: 
-
-Here you can provide detailed instructions to the Agent about how to work. This is the place to teach your agent how to work and think. As we have documents where information may be dispersed, we are going to instruct the agent to verify the document title with something like this:
-
-"When answering product specifications always check you are answering the question for the product the question is asked for. You should look to the document title to identify documents properly."
-
-- Access:
-
-Add the ROLES here that will be able to use this agent. For this one we are going to add the BIKE_SNOW_ROLE:
-
-![image](img/14_access.png)
-
-Finally click on Save.
-
-Once you have configured your agent, you can test how it works before providing it to your users
-
-![image](img/15_agent_configured.png)
-
-# Step 6: Test Snowflake Intelligence Access
+# Test Snowflake Intelligence Access
 
 You can use the ALL_USER that was created before to test that all works well. To access Snowflake Intelligence go to ai.snowflake.com, enter the URL of your account and the user and password. You should be able to see the Agent that has been assigned to the role used by that user:
 
-![image](img/16_all_user.png)
+![image](img/17_all_user.png)
 
-We can see how the agent is able to respond to the third question by first using Cortex Analyst tool to identify sales for each bike and then look into Cortex Search to find product specifications. The Agent is able to use all that context and provide an answer:
+You can test some of the questions suggested. For example, "What is the bike with most sales revenue during last year and what is their guarantee?", will need first to use the Cortex Analyst tool with the SALES_DATA_SEMANTIC_VIEW in order to run a SQL to identify the bike with most revenue. Then, using that info, find in the documentation what is their guarantee. Snowflake Intelligence also provide pointers to the pieces of the documents used to answer that question. If you click in "Show Details" you will see all the agent reasoning.
 
-![image](img/17_all_user_question.png)
+![image](img/18_q1.png)
 
-# Step 7: Create one Agent for SNOW_ROLE
+Let's try now the latest question. Our sales department noticed a decline in sales for the xtrema road bike and we would like to understand the reasons better:
 
-Last step is to show how we can create one Agent that respects RBAC that has been setup. We are going to set it up using Cortex Analyst, where RBAC will be applied and the Cortex Search service for the Snow documentation.
+"When the xtreme road bike sales started declining and what could be the reason for that?"
 
-You can follow the same steps we did before. For the Cortex Search tool, we are going to use the specific Cortex Search Service we created with a filter for just Snow products. But we could also have used only one service and filter it here when adding the tool to the agent:
+Run that yourself and see the full report, but at the end, Snowflake Intelligence has been able to identify some issues with the bike not covered by the warranty.
 
-![image](img/18_cortex_search_snow.png)
+![image](img/19_q2.png)
 
-Grant the usage of this Agent to the SNOW_ROLE:
+# AI Observability
 
-![image](img/19_access_role.png)
+We want to validate how our agent is performing. First thing we can do, when building the Agent is Monitor the questions that are being asked and see how the Agent is responding. Click on AI & ML -> Agents. Select your Agent and click on the Monitoring tab. You will see the question that have been asked:
 
-We have now defined one Agent that will be able to answer questions about sales and product specifications for our Snow products:
+![image](img/20_questions.png)
 
-![image](img/20_snow_agent.png)
+If you click in any of them you will be able to see the complete trace of the tools the Agent has been using and their thiking process. This will be very helpful in order to fine tune the instructions for the Agent.
 
+![image](img/21_traces.png)
 
-# Step 8: Test Role Base Access Control with Agents
+But in oder to systematically measure the performance of the Agents, we can leverage [AI Observability in Snowflake Cortex](https://docs.snowflake.com/en/user-guide/snowflake-cortex/ai-observability).
 
-Now go to ai.snowflake.com and login with your SNOW_USER. Test what questions can be asked. We can check that this user has access to the specific Agent we have just created:
+In oder to run run evaluations, we have created a ground truth dataset with questions and valid answers. First we copy it into a Snowflake table:
 
-![image](img/21_snow_user_hello.png)
+```SQL
+CREATE OR REPLACE TABLE agent_evaluation_data (
+    input_query VARCHAR,
+    ground_truth OBJECT
+);
 
-Ask questions to see that only Snow products are returned. If we ask:
+COPY INTO agent_evaluation_data (
+    input_query,
+    ground_truth
+)
+FROM @csv/agent_evaluation_data.csv
+FILE_FORMAT = (
+    TYPE = 'CSV'
+    FIELD_DELIMITER = ','
+    SKIP_HEADER = 1
+    FIELD_OPTIONALLY_ENCLOSED_BY = '"'
+    NULL_IF = ('NULL', 'null', '')
+    ERROR_ON_COLUMN_COUNT_MISMATCH = FALSE
+);
+```
 
-"What is the month by month revenue growth for each of the products that we sell?"
-
-You can review the planning steps and results if you click on "Show Details".
-
-In the output generated you will only see Snow products.
-
-![image](img/22_q1.png)
-
-Now that we have the results, we can ask a follow up question where in this case product specifications will be needed:
-
-"What are the product specifications difference for the product with highest growth and the product with lowest growth during December last year?"
-
-We can try to ask a question about Bikes, but as this agent does not have access to that information it will not be able to provide an answer. In this example, it provides the information has been able to find about Snow products:
-
-![image](img/23_q2.png)
-
-Now you can follow the same steps to create one Agent for Bike products only and assign it to the BIKE_ROLE, so users with that role will be able to use it with ai.snowflake.com
-
-Enjoy!.-
 
 
 
