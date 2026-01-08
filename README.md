@@ -46,13 +46,13 @@ Now you should have all files we are going to need for this lab in your Snowflak
 
 Under the snowflake_intelligence_e2e workspace, click on the SETUP_TOOLS_SI.ipynb notebook. Next step is to connect it to a personal service that will be running within Snowpark Container Services. Click on "Connect":
 
-![image](img/4_connnect.png)
+![image](img/4_connect.png)
 
 Edit the Service Settings where you can change the runtime, compute pool and idle timeout. Modify the idle timeout to just 2 hours to avoid consuming credits once this lab is completed. Modify and click on Create and Connect:
 
 ![image](img/5_service.png)
 
-Once the notebook is connected, you can run it. We are going to review here each step taken:
+Once the notebook is connected, you can run it. We are going to review here each step taken. Feel free to run each cell of the notebook and follow this guide to have a better understanding of each step.
 
 ## Setup Database for the Sales Assistant Agent
 
