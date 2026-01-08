@@ -56,24 +56,53 @@ Once the notebook is connected, you can run it. We are going to review here each
 
 ## Setup Database for the Sales Assistant Agent
 
+We are going to create a fresh database where we will place all objects needed for our Agents. We will also leverage the Git integration we have with this workspace to get access to PDF files, images and some CSV data with sales info.
 
------------
+This will create the database to be used (check you do not have a similar one as it will be re-created) and two staging areas, one to hold PDF and Images and other for CSV files. Note that those could be already in an external S3 location. 
 
-## Step 2: Setup Unstructured Data Tools to be Used by the Agent
+```SQL
+CREATE OR REPLACE DATABASE CC_SNOWFLAKE_INTELLIGENCE_E2E;
+USE DATABASE CC_SNOWFLAKE_INTELLIGENCE_E2E;
 
-We are going to be using a Snowflake Notebook to set up the Tools that will be used by the Snowflake Cortex Agents. Open the Notebook and follow each of the cells.
+create or replace stage docs ENCRYPTION = (TYPE = 'SNOWFLAKE_SSE') DIRECTORY = ( ENABLE = true );
+create or replace stage csv ENCRYPTION = (TYPE = 'SNOWFLAKE_SSE') DIRECTORY = ( ENABLE = true );
+```
 
-Select the Notebook that you have available in your Snowflake account within the Git Repositories:
+As we have the files in the workspace, we can copy them to those staging areas:
 
-![image](img/1_create_notebook.png)
+```SQL
+session.file.put("csv/*", "@CSV", auto_compress = False)
+session.file.put("docs/*", "@DOCS", auto_compress = False)
+```
 
-Give the notebook a name and run it in a Container using CPUs.
+In the other cells of this section we are getting a session handler that we can use with Snowpark
 
-![image](img/2_run_on_container.png)
+## Setup Roles
 
-You can run the entire Notebook and check each of the cells. This is the explanation for the Unstructured Data section.
+This lab will demostrate how we can leverage Row Access Policies so different roles can only see the data they are allowed to. As we have Bike and Snow products, we will define two different roles, one for Bikes and another for Snow, i order to demostrate how Agents will leverage Snowflake governance capabilities in order to only access the data the Agent is allowed to, based on the role being used.
 
-Thanks to the GIT integration done in the previous step, the PDF and IMAGE files that we are going to be using have already been copied into your Snowflake account. We are using two sets of documents, one for bikes and another for skis, and images for both. 
+It is convenient you choose your own passwords:
+
+```SQL
+create role if not exists BIKE_ROLE;
+create role if not exists SNOW_ROLE;
+create role if not exists BIKE_SNOW_ROLE;
+
+GRANT ROLE BIKE_ROLE TO ROLE ACCOUNTADMIN;
+GRANT ROLE SNOW_ROLE TO ROLE ACCOUNTADMIN;
+GRANT ROLE BIKE_SNOW_ROLE TO ROLE ACCOUNTADMIN;
+
+CREATE USER IF NOT EXISTS bike_user PASSWORD = 'Password123!' DEFAULT_ROLE = BIKE_ROLE;
+grant role BIKE_ROLE to user bike_user;
+
+CREATE USER IF NOT EXISTS snow_user PASSWORD = 'Password123!' DEFAULT_ROLE = SNOW_ROLE;
+grant role SNOW_ROLE to user snow_user;
+
+CREATE USER IF NOT EXISTS all_user PASSWORD = 'Password123!' DEFAULT_ROLE = BIKE_SNOW_ROLE;
+grant role BIKE_SNOW_ROLE to user all_user;
+```
+
+## Unstructured Data Processing for PDFs (Product Documentation)
 
 Check the content of the directory with documents (PDF and JPEG). Note that this is an internal staging area but it could also be an external S3 location, so there is no need to actually copy the PDFs into Snowflake. 
 
@@ -194,7 +223,7 @@ FROM
 WHERE
     dct.relative_path = dc.relative_path;
 ```
-### IMAGE Documents
+## Processing IMAGE Documents
 
 Now let's process the images we have for our bikes and skis. We are going to use AI_COMPLETE and AI_CLASSIFY multi-modal function asking for an image description and classification. We add it into the DOCS_CHUNKS_TABLE where we also have the PDF documentation. For AI_COMPLETE for Multi-Modal we are proposing claude-3-7-sonnet, but you should check what is the availability in your [region]( https://docs.snowflake.com/en/sql-reference/functions/ai_complete-single-file). 
 
@@ -203,6 +232,13 @@ We are going to run the next cell first to enable [CROSS REGION INFERENCE](https
 ```SQL
 ALTER ACCOUNT SET CORTEX_ENABLED_CROSS_REGION = 'AWS_EU';
 ```
+
+If you have an account in US and you want to keep it in that region , you can run this instead:
+
+```SQL
+ALTER ACCOUNT SET CORTEX_ENABLED_CROSS_REGION = 'AWS_US';
+```
+
 
 ```SQL
 INSERT INTO DOCS_CHUNKS_TABLE (relative_path, scoped_file_url, chunk, chunk_index, category, USER_ROLE)
@@ -254,39 +290,8 @@ At this point we should have only 2 roles. Check:
 ```SQL
 select distinct(USER_ROLE) from DOCS_CHUNKS_TABLE;
 ```
-### Setup Roles
 
-We are going to have three different roles. One that can get access to only BIKE info, other to SNOW info and the third one that can access all. We also create three users:
-
-```SQL
-create role if not exists BIKE_ROLE;
-create role if not exists SNOW_ROLE;
-create role if not exists BIKE_SNOW_ROLE;
-
-GRANT ROLE BIKE_ROLE TO ROLE ACCOUNTADMIN;
-GRANT ROLE SNOW_ROLE TO ROLE ACCOUNTADMIN;
-GRANT ROLE BIKE_SNOW_ROLE TO ROLE ACCOUNTADMIN;
-
-CREATE USER IF NOT EXISTS bike_user PASSWORD = 'Password123!' DEFAULT_ROLE = BIKE_ROLE;
-grant role BIKE_ROLE to user bike_user;
-
-CREATE USER IF NOT EXISTS snow_user PASSWORD = 'Password123!' DEFAULT_ROLE = SNOW_ROLE;
-grant role SNOW_ROLE to user snow_user;
-
-CREATE USER IF NOT EXISTS all_user PASSWORD = 'Password123!' DEFAULT_ROLE = BIKE_SNOW_ROLE;
-grant role BIKE_SNOW_ROLE to user all_user;
-```
-
-Grant each role to the current user:
-
-```python
-current_user = session.get_current_user()
-
-for role in ['BIKE_ROLE', 'SNOW_ROLE', 'BIKE_SNOW_ROLE']:
-    session.sql(f'grant role {role} to user {current_user}').collect()
-```
-
-### Enable Cortex Search Service
+### Enable Cortex Search Service for the Documentation and Images
 
 Now that we have processed the PDF and IMAGE documents, we can create a [Cortex Search Service](https://docs.snowflake.com/en/user-guide/snowflake-cortex/cortex-search/cortex-search-overview) that automatically will create embeddings and indexes over the chunks of text extracted. Read the docs for the different embedding models available.
 
@@ -357,40 +362,86 @@ as (
 Now we are going to grant access to those services to the different roles:
 
 ```SQL
-USE ROLE ACCOUNTADMIN;
-
 -- BIKE_ROLE:
-GRANT OPERATE ON WAREHOUSE COMPUTE_WH TO ROLE BIKE_ROLE;
-GRANT usage ON WAREHOUSE COMPUTE_WH TO ROLE BIKE_ROLE;
-
-GRANT DATABASE ROLE SNOWFLAKE.CORTEX_USER TO ROLE BIKE_ROLE;
 
 GRANT USAGE ON CORTEX SEARCH SERVICE DOCUMENTATION_TOOL_BIKES TO ROLE BIKE_ROLE;
 
 --- SNOW_ROLE:
-GRANT OPERATE ON WAREHOUSE COMPUTE_WH TO ROLE SNOW_ROLE;
-GRANT usage ON WAREHOUSE COMPUTE_WH TO ROLE SNOW_ROLE;
-
-GRANT DATABASE ROLE SNOWFLAKE.CORTEX_USER TO ROLE SNOW_ROLE;
 
 GRANT USAGE ON CORTEX SEARCH SERVICE DOCUMENTATION_TOOL_SNOW TO ROLE SNOW_ROLE;
 
 -- BIKE_SNOW_ROLE:
 
-GRANT OPERATE ON WAREHOUSE COMPUTE_WH TO ROLE BIKE_SNOW_ROLE;
-GRANT usage ON WAREHOUSE COMPUTE_WH TO ROLE BIKE_SNOW_ROLE;
-
-GRANT DATABASE ROLE SNOWFLAKE.CORTEX_USER TO ROLE BIKE_SNOW_ROLE;
-
 GRANT USAGE ON CORTEX SEARCH SERVICE DOCUMENTATION_TOOL TO ROLE BIKE_SNOW_ROLE;
 ```
 
-
-If you have run these steps via the Notebook (recommended so you avoid copy/paste) you now have a cell for the tool API.
-
 After this step, we have one tool ready to retrieve context from PDF and IMAGE files.
 
-## Step 3: Set Up Structured Data to be Used by the Agent
+## Tools for Unstructured Data (Customer Reviews)
+
+In the previous step we have processed Unstructured data in the format of PDF files. Next we are going to process the customer reviews that are already located in a Snowflake table within a column. We will enable Cortex Search so we can create a tool for our agents that will retreive customer reviews.
+
+The customer reviews for our products are already located in CSV file that we can copy into a Snoflake table:
+
+```SQL
+CREATE OR REPLACE TABLE customer_experience_comments (
+    id INT,
+    experience_date DATE,
+    product_id INT,
+    product_name VARCHAR(100),
+    comment TEXT
+);
+
+COPY INTO customer_experience_comments (
+    id,
+    experience_date,
+    product_id,
+    product_name,
+    comment
+)
+FROM @csv/customer_experience_comments.csv
+FILE_FORMAT = (
+    TYPE = 'CSV'
+    FIELD_DELIMITER = ','
+    RECORD_DELIMITER = '\n'
+    SKIP_HEADER = 1
+    FIELD_OPTIONALLY_ENCLOSED_BY = '"'
+    NULL_IF = ('NULL', 'null', '')
+    ERROR_ON_COLUMN_COUNT_MISMATCH = TRUE
+);
+```
+
+And now we can just create a Cortex Search Service on that table, we we index on the date, product_name and customer comments:
+
+```SQL
+create or replace CORTEX SEARCH SERVICE CUSTOMER_EXPERIENCE_TOOL
+ON product_experience
+warehouse = COMPUTE_WH
+TARGET_LAG = '1 hour'
+EMBEDDING_MODEL = 'snowflake-arctic-embed-l-v2.0'
+as (
+    select experience_date, product_id, product_name, comment,
+    CONCAT(experience_date, ' ', product_name, ': ', comment) AS product_experience
+    from customer_experience_comments
+);
+```
+
+At the point, if you click on the Catalog and select your database, you can see the objects already created:
+
+![image](img/6_horizon.png)
+
+Under AI & ML -> Search, you can also find the services we have created that will be used as Tools by the Agents:
+
+![image](img/7_search_services.png)
+
+You can use the Playground to interact with any of these services and test it. Click on CUSTOMER_EXPERIENCE_TOOL. You will see all details about that service. You have the URL to access the service or Python example. If you click on Data Preview you will see how Embeddings have been automatically created for you. Cost of the service can also be seen here.
+
+Click on Playground and enter some text. Cortex Search will provide to chunks with higher vector and keyword similarity with very low latency:
+
+![image](img/8_playground.png)
+
+
+## Set Up Structured Data to be Used by the Agent
 Another Tool that we will provide to the Cortex Agent will be Cortex Analyst, which will provide the capability to extract information from Snowflake Tables. In the API call we will provide the location of a Semantic file that contains information about the business terminology used to describe the data.
 
 First we are going to create some synthetic data about the bike and ski products that we have.
@@ -466,7 +517,12 @@ VALUES
 (8, 'Racing Fast Skis', 'Skis', 'RacerX', 'Grey', 950);
 ```
 
-Here we are going to create a mapping table to define what ROLES can access what product categories.
+We are going to use [Row Access Policies](https://docs.snowflake.com/en/user-guide/security-row-intro) in order to define what rows can be retrieved for each of the roles. These policies will be respected by the Agents that will be quering the sales tables.
+
+In our case, the BIKE_ROLE will be able to see the rows containing bike products and the SNOW_ROLE will be able to access Snow articles.
+
+First we define a tabe with the mapping of who can do what:
+
 
 ```SQL
 CREATE OR REPLACE TABLE ROW_ACCESS_MAPPING(
@@ -506,7 +562,6 @@ ALTER TABLE DIM_ARTICLE
   ON (ARTICLE_CATEGORY);
 ```
 
-
 Data for Customers:
 
 ```SQL
@@ -543,7 +598,7 @@ SELECT
 FROM TABLE(GENERATOR(ROWCOUNT => 5000));
 ```
 
-And Sales data:
+And Sales data from the CSV file:
 
 ```SQL
 CREATE OR REPLACE TABLE FACT_SALES (
@@ -559,56 +614,103 @@ CREATE OR REPLACE TABLE FACT_SALES (
     FOREIGN KEY (CUSTOMER_ID) REFERENCES DIM_CUSTOMER(CUSTOMER_ID)
 );
 
--- Populating Sales Fact Table with new attributes
-INSERT INTO FACT_SALES (SALE_ID, ARTICLE_ID, DATE_SALES, CUSTOMER_ID, QUANTITY_SOLD, TOTAL_PRICE, SALES_CHANNEL, PROMOTION_APPLIED)
-SELECT 
-    SEQ4() AS SALE_ID,
-    A.ARTICLE_ID,
-    DATEADD(DAY, UNIFORM(-1095, 0, RANDOM()), CURRENT_DATE) AS DATE_SALES,
-    UNIFORM(1, 5000, RANDOM()) AS CUSTOMER_ID,
-    UNIFORM(1, 10, RANDOM()) AS QUANTITY_SOLD,
-    UNIFORM(1, 10, RANDOM()) * A.ARTICLE_PRICE AS TOTAL_PRICE,
-    CASE MOD(SEQ4(), 3)
-        WHEN 0 THEN 'Online'
-        WHEN 1 THEN 'In-Store'
-        ELSE 'Partner'
-    END AS SALES_CHANNEL,
-    CASE MOD(SEQ4(), 4)
-        WHEN 0 THEN TRUE
-        ELSE FALSE
-    END AS PROMOTION_APPLIED
-FROM DIM_ARTICLE A
-JOIN TABLE(GENERATOR(ROWCOUNT => 10000)) ON TRUE
-ORDER BY DATE_SALES;
+COPY INTO FACT_SALES (
+    SALE_ID,
+    ARTICLE_ID, 
+    DATE_SALES,
+    CUSTOMER_ID,
+    QUANTITY_SOLD,
+    TOTAL_PRICE,
+    SALES_CHANNEL,
+    PROMOTION_APPLIED
+)
+FROM @csv/fact_sales.csv
+FILE_FORMAT = (
+    TYPE = 'CSV'
+    FIELD_DELIMITER = ','
+    RECORD_DELIMITER = '\n'
+    SKIP_HEADER = 1
+    FIELD_OPTIONALLY_ENCLOSED_BY = '"'
+    NULL_IF = ('NULL', 'null', '')
+    ERROR_ON_COLUMN_COUNT_MISMATCH = TRUE
+);
 ```
 
-Assign those objects to the roles we have created:
+### Improving Tool Usage with Dynamic Literal Retrieval
+
+Thanks to the Cortex Analyst integration with Cortex Search, we can improve the retrieval of all possible values of a column. Instead of listing all the possible values in the semantic file, we can use Cortex Search Integration.
+
+Let's use it as example for the ARTICLE NAMES, so we do not have to list all.
 
 ```SQL
--- BIKE_ROLE:
+CREATE OR REPLACE TABLE ARTICLE_NAMES AS
+  SELECT
+      DISTINCT ARTICLE_NAME AS ARTICLE_NAME
+  FROM DIM_ARTICLE;
 
-GRANT USAGE ON DATABASE CC_CORTEX_AGENTS_RBAC TO ROLE BIKE_ROLE;
-GRANT USAGE ON SCHEMA PUBLIC TO ROLE BIKE_ROLE;
-GRANT SELECT ON TABLE DIM_ARTICLE TO ROLE BIKE_ROLE;
-GRANT SELECT ON TABLE DIM_CUSTOMER TO ROLE BIKE_ROLE;
-GRANT SELECT ON TABLE FACT_SALES TO ROLE BIKE_ROLE;
-
---- SNOW_ROLE:
-
-GRANT USAGE ON DATABASE CC_CORTEX_AGENTS_RBAC TO ROLE SNOW_ROLE;
-GRANT USAGE ON SCHEMA PUBLIC TO ROLE SNOW_ROLE;
-GRANT SELECT ON TABLE DIM_ARTICLE TO ROLE SNOW_ROLE;
-GRANT SELECT ON TABLE DIM_CUSTOMER TO ROLE SNOW_ROLE;
-GRANT SELECT ON TABLE FACT_SALES TO ROLE SNOW_ROLE;
-
--- BIKE_SNOW_ROLE:
-
-GRANT USAGE ON DATABASE CC_CORTEX_AGENTS_RBAC TO ROLE BIKE_SNOW_ROLE;
-GRANT USAGE ON SCHEMA PUBLIC TO ROLE BIKE_SNOW_ROLE;
-GRANT SELECT ON TABLE DIM_ARTICLE TO ROLE BIKE_SNOW_ROLE;
-GRANT SELECT ON TABLE DIM_CUSTOMER TO ROLE BIKE_SNOW_ROLE;
-GRANT SELECT ON TABLE FACT_SALES TO ROLE BIKE_SNOW_ROLE;
+CREATE OR REPLACE CORTEX SEARCH SERVICE _ARTICLE_NAME_SEARCH
+  ON ARTICLE_NAME
+  WAREHOUSE = COMPUTE_WH
+  TARGET_LAG = '1 day'
+  EMBEDDING_MODEL = 'snowflake-arctic-embed-l-v2.0'
+AS (
+  SELECT
+       ARTICLE_NAME
+  FROM ARTICLE_NAMES
+);
 ```
+Now we have the data that we need to get information about product sales. Next is to define the Semantic Model that will be used by Cortex Analyst in order to generate the right SQL when a question is being asked using natural language.
+
+## Semantic Model Definition for Cortex Analyst
+
+Semantic models map business terminology to database schemas and add contextual meaning. Here we define the tables, their relationships, and the description for their dimensions and facts.
+
+We can also produce specific instructions that will help Cortex Analyst to provide the right SQL.
+
+Cortex Analyst will be used by the agents as the Tool to retrieve information from Snowflake Table that needs to be extracted using SQL.
+
+You can create the Semantic Model using Snowsight, click on AI & ML - > Analyst -> Create new. THen you can select your database, select tables and columns. You can also create a Semantic View programatically using the following SQL:
+
+```SQL
+create or replace semantic view SALES_DATA_SEMANTIC_VIEW
+	tables (
+		CC_SNOWFLAKE_INTELLIGENCE_E2E.PUBLIC.DIM_ARTICLE primary key (ARTICLE_ID),
+		CC_SNOWFLAKE_INTELLIGENCE_E2E.PUBLIC.DIM_CUSTOMER primary key (CUSTOMER_ID),
+		CC_SNOWFLAKE_INTELLIGENCE_E2E.PUBLIC.FACT_SALES primary key (CUSTOMER_ID,ARTICLE_ID)
+	)
+	relationships (
+		ARTICLE_JOIN as FACT_SALES(ARTICLE_ID) references DIM_ARTICLE(ARTICLE_ID),
+		CUSTOMER_JOIN as FACT_SALES(CUSTOMER_ID) references DIM_CUSTOMER(CUSTOMER_ID)
+	)
+	facts (
+		DIM_ARTICLE.ARTICLE_ID as ARTICLE_ID with synonyms=('article_key','article_reference','item_id','item_number','product_code','product_id') comment='Unique identifier for an article in the inventory.',
+		DIM_ARTICLE.ARTICLE_PRICE as ARTICLE_PRICE with synonyms=('article_value','item_cost','list_price','product_price','retail_price','sale_price','unit_price') comment='The price of an article, representing the monetary value assigned to a specific article or product.',
+		DIM_CUSTOMER.CUSTOMER_AGE as CUSTOMER_AGE with synonyms=('age_of_customer','customer_birth_year','customer_dob','customer_maturity','years_old') comment='The age of the customer at the time of data collection, representing the number of years since birth.',
+		DIM_CUSTOMER.CUSTOMER_ID as CUSTOMER_ID with synonyms=('account_number','client_id','client_identifier','customer_key','patron_id','subscriber_id','user_id') comment='Unique identifier for each customer in the database.',
+		FACT_SALES.ARTICLE_ID as ARTICLE_ID with synonyms=('article_number','item_code','item_id','item_number','product_code','product_id','product_number') comment='Unique identifier for the article being sold.',
+		FACT_SALES.CUSTOMER_ID as CUSTOMER_ID with synonyms=('account_id','buyer_id','client_id','client_number','customer_number','patron_id','user_id') comment='Unique identifier for the customer who made the sale.',
+		FACT_SALES.QUANTITY_SOLD as QUANTITY_SOLD with synonyms=('amount_sold','items_sold','number_sold','quantity_purchased','sales_volume','sold_quantity','units_sold') comment='The total number of units of a product sold in a single transaction.',
+		FACT_SALES.SALE_ID as SALE_ID with synonyms=('invoice_number','order_id','purchase_id','sale_number','sale_reference','sales_transaction','transaction_id','transaction_reference') comment='Unique identifier for each sales transaction.',
+		FACT_SALES.TOTAL_PRICE as TOTAL_PRICE with synonyms=('sale_amount','total_amount','total_cost','total_invoice_value','total_revenue','total_sale_value','total_transaction_value') comment='The total price of a sale, representing the overall amount paid by a customer for a particular transaction.'
+	)
+	dimensions (
+		DIM_ARTICLE.ARTICLE_BRAND as ARTICLE_BRAND with synonyms=('article_label','article_maker','brand_name','item_brand','manufacturer','product_brand') comment='The brand name of the article, representing the manufacturer or label associated with the product.',
+		DIM_ARTICLE.ARTICLE_CATEGORY as ARTICLE_CATEGORY with synonyms=('article_grouping','article_type','category_name','classification','genre','item_group','product_category','product_class') comment='The category of the article, such as Bike, Ski Boots, or Skis, which represents the type of product being sold or managed.',
+		DIM_ARTICLE.ARTICLE_COLOR as ARTICLE_COLOR with synonyms=('article_hue','article_shade','color','hue','item_color','product_color','shade','tint') comment='The color of the article, which can be one of the following: Red, Blue, or Black.',
+		DIM_ARTICLE.ARTICLE_NAME as ARTICLE_NAME with synonyms=('article_title','item_description','item_name','product_description','product_name','product_title') comment='The name of the article or product being sold, such as a specific type of bicycle.' with cortex search service _ARTICLE_NAME_SEARCH,
+		DIM_CUSTOMER.CUSTOMER_GENDER as CUSTOMER_GENDER with synonyms=('customer_sex','demographic_gender','gender_category','gender_type','sex') comment='The gender of the customer, either Male or Female.',
+		DIM_CUSTOMER.CUSTOMER_NAME as CUSTOMER_NAME with synonyms=('account_holder','account_name','buyer_name','client_name','client_title','customer_title','patron_name') comment='The name of the customer, used to identify and distinguish between individual customers.',
+		DIM_CUSTOMER.CUSTOMER_REGION as CUSTOMER_REGION with synonyms=('area_code','customer_location','customer_territory','geographic_area','market_area','region_code','sales_region','territory') comment='Geographic region where the customer is located.',
+		DIM_CUSTOMER.CUSTOMER_SEGMENT as CUSTOMER_SEGMENT with synonyms=('client_segment','customer_category','customer_group','customer_type','demographic_segment','market_segment','patron_category') comment='The CUSTOMER_SEGMENT dimension categorizes customers based on their purchase behavior and loyalty, with three distinct segments: Premium (high-value, frequent customers), Regular (consistent, mid-value customers), and Occasional (infrequent, low-value customers).',
+		FACT_SALES.PROMOTION_APPLIED as PROMOTION_APPLIED with synonyms=('discount_flag','discount_used','offer_applied','promo_used','promotion_used','sale_applied','sale_flag','special_offer') comment='Indicates whether a promotion was applied to a sale.',
+		FACT_SALES.SALES_CHANNEL as SALES_CHANNEL with synonyms=('distribution_channel','point_of_sale','sales_medium','sales_medium_type','sales_outlet','sales_route','sales_source') comment='The sales channel through which the sale was made, indicating whether the transaction occurred online, in a physical store, or through a business partner.',
+		FACT_SALES.DATE_SALES as DATE_SALES with synonyms=('ORDER_DATE','PURCHASE_DATE','SALE_TIMESTAMP','SALES_DATE','TRANSACTION_DATE') comment='Date on which the sales transaction occurred.'
+	)
+	comment='The data model consists of three core tables: DIM_ARTICLE, which stores detailed information about the products being sold, including their name, category, brand, color, and price; DIM_CUSTOMER, which contains customer profiles with attributes like region, age, gender, and marketing segment; and FACT_SALES, which captures all sales transactions by linking customers to purchased articles, along with details such as sale date, quantity, total price, sales channel, and whether a promotion was applied. Together, these tables provide a comprehensive view of products, customers, and sales activity, enabling rich analysis across multiple dimensions.'
+	ai_sql_generation 'Limit answer to sales questions about products. You should not answer questions about product specifications or usage.'
+	with extension (CA='{"tables":[{"name":"DIM_ARTICLE","dimensions":[{"name":"ARTICLE_BRAND","sample_values":["Mondracer","Veloci","TDBootz"]},{"name":"ARTICLE_CATEGORY","sample_values":["Bike","Ski Boots","Skis"]},{"name":"ARTICLE_COLOR","sample_values":["Red","Blue","Black"]},{"name":"ARTICLE_NAME"}],"facts":[{"name":"ARTICLE_ID","sample_values":["1","2","3"]},{"name":"ARTICLE_PRICE","sample_values":["3000","9000","10000"]}]},{"name":"DIM_CUSTOMER","dimensions":[{"name":"CUSTOMER_GENDER","sample_values":["Male","Female"]},{"name":"CUSTOMER_NAME","sample_values":["Customer 0","Customer 1","Customer 2"]},{"name":"CUSTOMER_REGION","sample_values":["North","South","East"]},{"name":"CUSTOMER_SEGMENT","sample_values":["Premium","Regular","Occasional"]}],"facts":[{"name":"CUSTOMER_AGE","sample_values":["38","23","24"]},{"name":"CUSTOMER_ID","sample_values":["0","1","2"]}]},{"name":"FACT_SALES","dimensions":[{"name":"PROMOTION_APPLIED","sample_values":["TRUE","FALSE"]},{"name":"SALES_CHANNEL","sample_values":["Online","In-Store","Partner"]}],"facts":[{"name":"ARTICLE_ID","sample_values":["5","4","7"]},{"name":"CUSTOMER_ID","sample_values":["3678","3031","1927"]},{"name":"QUANTITY_SOLD","sample_values":["9","2","10"]},{"name":"SALE_ID","sample_values":["0","1","2"]},{"name":"TOTAL_PRICE","sample_values":["76500","100000","10000"]}],"time_dimensions":[{"name":"DATE_SALES","sample_values":["2022-04-16","2022-04-17","2022-04-18"]}]}],"relationships":[{"name":"customer_join","relationship_type":"many_to_one","join_type":"inner"},{"name":"article_join","relationship_type":"many_to_one","join_type":"inner"}]}');
+```
+
 
 You can switch the ROLE and test how RBAC works:
 
