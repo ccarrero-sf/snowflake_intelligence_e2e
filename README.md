@@ -848,13 +848,13 @@ We could also add here our own custom tools
 
 Here you tell the agent how to reason through the different tasks and how to choose the right tools. Also you provide instructions about how the agent shoudl respond:
 
-![image](img/14_tools.png)
+![image](img/15_orchestration.png)
 
 #### Access
 
 Here we determine what roles can use this agent. This is important, because we have set Role Based Access Control and Row Access Policies. When using Cortex Analyst tool, the agent will respect those policies and will only retrieve the information the role has access to.
 
-![image](img/16_access.png)
+![image](img/16_acccess.png)
 
 If you continue executing the Notebook cells, next will be creating specific Agents for Bike and Snow that will only have access to their specific Cortex Search Services as tools. We do not copy it here as the only difference is the tool to be used and you have it in the Notebook.
 
