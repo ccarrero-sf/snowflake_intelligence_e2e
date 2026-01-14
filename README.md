@@ -912,6 +912,40 @@ FILE_FORMAT = (
 );
 ```
 
+Now we are going to use the Agent Evaluation (in Private Preview when writing this, so maybe not available in your account - reach out to your Account Team) following the steps indicated at [Getting Started with Cortex Agent Evaluations](https://www.snowflake.com/en/developers/guides/getting-started-with-cortex-agent-evaluations/)
+
+First go to AI & ML -> Agents and click on BIKES_SNOW_AGENT. Notice the "Evaluations" tab. Select it and click on "New evaluation run":
+
+![image](img/22_evals.png)
+
+Give a name to the evaluation and click next
+
+Evaluations use one static dataset that we will be creating from the eval table we have created before. Click on "Create new dataset". Select the AGENT_EVALUATION_DATA table from our database and schema, select to store it in the same location and give it a name (EVALUATION_DATASET):
+
+![image](img/23_dataset.png)
+
+Click next and now select the metrics we want to evaluate. Select INPUT_QUERY column for the Input query, and GROUND_TRUTH for the answer evaluation:
+
+![image](img/24_data.png)
+
+When you click on Create, it will generate a new Run for that dataset. It may take a few minutes to run the evaluation. Once it is done, you will see the response for each question and how it has been evaluated:
+
+![image](img/25_eval_results.png)
+
+For each of them you can review the reasons for each rating:
+
+![image](img/26_record_details.png)
+
+# Add Agents with Different LLMs for Orchestration
+
+Using AI Observability now you can create different flavours of your Agents, test different instructions, tools, etc and see how they respond against your evaluation dataset. At the end of the notebook you have the commands to create agents that use a fixed LLM for orchestration. Create them and run evaluation against those agents to see how they work.
+
+
+
+
+
+
+
 
 
 
